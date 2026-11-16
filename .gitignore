@@ -1,5 +1,6 @@
 node_modules/
 data/*.json
+data/uploads/
 .session_secret
 sessions/
 data/sessions/

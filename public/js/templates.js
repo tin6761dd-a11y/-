@@ -111,12 +111,16 @@
       .replace(/'/g, "&#39;");
   }
 
+  var renderOptions = {};
+
   function isSafeUrl(url) {
     if (!url) return false;
     var s = String(url).trim();
     if (!s) return false;
     if (s.charAt(0) === "#") return true;
     if (s.charAt(0) === "/" && s.charAt(1) !== "/") return true;
+    if (/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(s)) return true;
+    if (/^blob:/i.test(s)) return true;
     try {
       var u = new URL(s, "https://example.invalid");
       return u.protocol === "http:" || u.protocol === "https:";
@@ -136,8 +140,61 @@
   }
 
   function asImages(val) {
-    if (Array.isArray(val)) return val.map(function (x) { return String(x).trim(); }).filter(Boolean);
-    return String(val || "").split(/[\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    var list = [];
+    if (Array.isArray(val)) list = val;
+    else if (val) list = String(val).split(/[\n,]+/);
+    var out = [];
+    for (var i = 0; i < list.length && out.length < 10; i++) {
+      var item = list[i];
+      if (item == null || item === "") continue;
+      if (typeof item === "string") {
+        var src = item.trim();
+        if (!src) continue;
+        out.push({ src: src, alt: "", hero: out.length === 0, kind: src.indexOf("/uploads/") === 0 || src.indexOf("data:") === 0 ? "upload" : "url" });
+        continue;
+      }
+      var s = String(item.src || item.url || "").trim();
+      if (!s) continue;
+      out.push({
+        id: item.id ? String(item.id) : "",
+        src: s,
+        alt: String(item.alt || "").trim(),
+        hero: !!item.hero,
+        kind: item.kind || (s.indexOf("/uploads/") === 0 || s.indexOf("data:") === 0 ? "upload" : "url")
+      });
+    }
+    if (out.length && !out.some(function (im) { return im.hero; })) out[0].hero = true;
+    if (out.filter(function (im) { return im.hero; }).length > 1) {
+      var seen = false;
+      out.forEach(function (im) {
+        if (im.hero && seen) im.hero = false;
+        else if (im.hero) seen = true;
+      });
+    }
+    return out;
+  }
+
+  function heroImage(images) {
+    var list = images || [];
+    for (var i = 0; i < list.length; i++) if (list[i] && list[i].hero) return list[i];
+    return list[0] || null;
+  }
+
+  function resolveSrc(src) {
+    var s = String(src || "").trim();
+    if (!s) return "";
+    if (renderOptions.embedImages && renderOptions.embedImages[s]) return renderOptions.embedImages[s];
+    if (renderOptions.rewriteImages && renderOptions.rewriteImages[s]) return renderOptions.rewriteImages[s];
+    return s;
+  }
+
+  function absoluteUrl(src, baseUrl) {
+    var s = String(src || "").trim();
+    if (!s) return "";
+    if (/^https?:\/\//i.test(s) || /^data:/i.test(s)) return s;
+    if (!baseUrl) return s;
+    if (s.charAt(0) === "/") return String(baseUrl).replace(/\/$/, "") + s;
+    return s;
   }
 
   function hexLuminance(hex) {
@@ -221,7 +278,7 @@
   }
 
   function placeholderSvg(label) {
-    var safe = escapeHtml(label || "益芳封口機");
+    var safe = escapeHtml(label || "產品圖片");
     return (
       '<svg class="ph-svg" viewBox="0 0 640 480" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
         '<defs>' +
@@ -241,12 +298,68 @@
 
   function imageBlock(src, alt, className) {
     var cls = className || "media";
-    if (src && isSafeUrl(src)) {
-      return '<img class="' + cls + '" src="' + escapeHtml(src) + '" alt="' + escapeHtml(alt || "") + '">';
+    var resolved = resolveSrc(src);
+    if (resolved && isSafeUrl(resolved)) {
+      return '<img class="' + cls + '" src="' + escapeHtml(resolved) + '" alt="' + escapeHtml(alt || "") + '">';
     }
     return '<div class="img-ph ' + cls + '" role="img" aria-label="' + escapeHtml(alt || "") + '">' +
       placeholderSvg(alt || "產品圖片") +
       "</div>";
+  }
+
+  function imgOf(im, altFallback, className) {
+    if (!im) return imageBlock("", altFallback, className);
+    return imageBlock(im.src, im.alt || altFallback, className);
+  }
+
+  function gallerySection(d) {
+    var imgs = d.images || [];
+    if (imgs.length < 2) return "";
+    var slides = imgs.map(function (im, i) {
+      return '<figure class="slide">' + imgOf(im, im.alt || d.productName || d.brandName || ("圖片 " + (i + 1)), "media") +
+        (im.alt ? "<figcaption>" + escapeHtml(im.alt) + "</figcaption>" : "") +
+        "</figure>";
+    }).join("");
+    return '<section class="gallery-section" id="gallery">' +
+      '<div class="container">' +
+        "<h2>圖片集</h2>" +
+        '<div class="carousel" data-carousel>' +
+          '<div class="carousel-viewport"><div class="carousel-track">' + slides + "</div></div>" +
+          '<button type="button" class="carousel-btn carousel-prev" aria-label="上一張">‹</button>' +
+          '<button type="button" class="carousel-btn carousel-next" aria-label="下一張">›</button>' +
+          '<div class="carousel-dots"></div>' +
+        "</div>" +
+      "</div>" +
+    "</section>";
+  }
+
+  function carouselScript() {
+    var js = [
+      "(function(){",
+      "document.querySelectorAll('[data-carousel]').forEach(function(root){",
+      "var track=root.querySelector('.carousel-track');",
+      "var slides=[].slice.call(root.querySelectorAll('.slide'));",
+      "var dotsBox=root.querySelector('.carousel-dots');",
+      "if(!track||!slides.length)return;",
+      "var i=0;",
+      "function go(n){i=(n+slides.length)%slides.length;track.style.transform='translateX('+(-i*100)+'%)';",
+      "if(dotsBox){var ds=dotsBox.querySelectorAll('button');for(var j=0;j<ds.length;j++)ds[j].classList.toggle('active',j===i);}",
+      "}",
+      "var prev=root.querySelector('.carousel-prev');",
+      "var next=root.querySelector('.carousel-next');",
+      "if(slides.length<2){if(prev)prev.hidden=true;if(next)next.hidden=true;if(dotsBox)dotsBox.hidden=true;return;}",
+      "if(prev)prev.addEventListener('click',function(){go(i-1)});",
+      "if(next)next.addEventListener('click',function(){go(i+1)});",
+      "if(dotsBox){dotsBox.innerHTML=slides.map(function(_,j){return '<button type=\"button\" aria-label=\"'+ (j+1) +'\"></button>';}).join('');",
+      "dotsBox.querySelectorAll('button').forEach(function(b,j){b.addEventListener('click',function(){go(j)})});}",
+      "var startX=0;",
+      "root.addEventListener('touchstart',function(e){startX=e.changedTouches[0].clientX;},{passive:true});",
+      "root.addEventListener('touchend',function(e){var dx=e.changedTouches[0].clientX-startX;if(Math.abs(dx)>40)go(i+(dx<0?1:-1));},{passive:true});",
+      "go(0);",
+      "});",
+      "})();"
+    ].join("");
+    return "<script>" + js + "</scr" + "ipt>";
   }
 
   function featuresList(features, className) {
@@ -418,6 +531,19 @@
       ".thumbs button.active,.thumbs button:focus{border-color:var(--primary)}",
       ".thumbs img,.thumbs .img-ph{min-height:76px;height:76px;width:76px;object-fit:cover;border-radius:10px;box-shadow:none}",
       ".ecom-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start}",
+      ".gallery-section{padding-top:24px}",
+      ".carousel{position:relative}",
+      ".carousel-viewport{overflow:hidden;border-radius:var(--radius);box-shadow:var(--shadow);background:var(--card)}",
+      ".carousel-track{display:flex;transition:transform .35s ease}",
+      ".carousel-track .slide{min-width:100%;margin:0;padding:0}",
+      ".carousel-track .slide img,.carousel-track .slide .img-ph{min-height:280px;max-height:560px;object-fit:cover;width:100%;border-radius:0;box-shadow:none}",
+      ".carousel-track figcaption{padding:10px 16px;color:var(--muted);font-size:.9rem}",
+      ".carousel-btn{position:absolute;top:46%;transform:translateY(-50%);width:40px;height:40px;border:0;border-radius:50%;background:color-mix(in srgb,var(--card) 85%, transparent);color:var(--text);font-size:1.4rem;cursor:pointer;box-shadow:var(--shadow)}",
+      ".carousel-prev{left:10px}",
+      ".carousel-next{right:10px}",
+      ".carousel-dots{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap}",
+      ".carousel-dots button{width:9px;height:9px;padding:0;border:0;border-radius:50%;background:var(--border);cursor:pointer}",
+      ".carousel-dots button.active{background:var(--primary);transform:scale(1.2)}",
       "@media (max-width: 860px){",
       ".hero-grid,.footer-grid,.ecom-grid{grid-template-columns:1fr}",
       ".hero{padding:40px 0 24px}",
@@ -427,7 +553,8 @@
   }
 
   function renderPromo(d) {
-    var img = imageBlock(d.images[0], d.productName || d.brandName, "media");
+    var hero = heroImage(d.images);
+    var img = imgOf(hero, d.productName || d.brandName, "media");
     return (
       (d.offer ? '<div class="offer-banner">' + escapeHtml(d.offer) + "</div>" : "") +
       navHtml(d) +
@@ -448,6 +575,7 @@
         (d.features.length
           ? '<section><div class="container"><h2>為什麼選擇我們</h2>' + featuresList(d.features) + "</div></section>"
           : "") +
+        gallerySection(d) +
         '<section class="cta-band"><div class="container"><h2>想進一步了解或預約？</h2><p class="lead">歡迎直接洽詢，我們會儘快與您聯繫。</p><a class="btn" href="#contact">' + escapeHtml(d.ctaText) + "</a></div></section>" +
       "</main>" +
       footerHtml(d)
@@ -477,7 +605,7 @@
               (d.offer ? "<p class=\"price-offer\">" + escapeHtml(d.offer) + "</p>" : "") +
               '<div class="hero-actions"><a class="btn" href="' + escapeHtml(safeUrl(d.ctaLink, "#contact")) + '">' + escapeHtml(d.ctaText) + "</a></div>" +
             "</div>" +
-            imageBlock(d.images[0], d.brandName, "media") +
+            imgOf(heroImage(d.images), d.brandName, "media") +
           "</div>" +
         "</section>" +
         (d.features.length
@@ -488,6 +616,7 @@
             return '<article class="card"><div class="num">' + s.n + "</div><h3>" + s.t + "</h3><p class=\"lead\" style=\"margin:0\">" + s.p + "</p></article>";
           }).join("") +
         "</div></div></section>" +
+        gallerySection(d) +
         '<section class="cta-band"><div class="container"><h2>需要協助或想進一步了解？</h2><p class="lead">歡迎先聯絡我們，說明您的需求。</p><a class="btn" href="#contact">' + escapeHtml(d.ctaText) + "</a></div></section>" +
       "</main>" +
       footerHtml(d)
@@ -516,13 +645,12 @@
             (d.description ? '<p class="lead" style="max-width:720px">' + escapeHtml(d.description) + "</p>" : "") +
             '<div class="hero-actions"><a class="btn" href="' + escapeHtml(safeUrl(d.ctaLink, "#contact")) + '">' + escapeHtml(d.ctaText) + "</a></div>" +
           "</div>" +
+          (heroImage(d.images) ? '<div style="margin-top:28px">' + imgOf(heroImage(d.images), d.productName || "活動圖片", "media") + "</div>" : "") +
         "</section>" +
         (d.features.length
           ? '<section><div class="container"><h2>活動內容</h2>' + featuresList(d.features) + "</div></section>"
           : "") +
-        (d.images[0]
-          ? '<section><div class="container">' + imageBlock(d.images[0], d.productName || "活動圖片", "media") + "</div></section>"
-          : "") +
+        gallerySection(d) +
         '<section class="cta-band"><div class="container"><h2>名額有限，歡迎提早預約</h2><a class="btn" href="#contact">' + escapeHtml(d.ctaText) + "</a></div></section>" +
       "</main>" +
       footerHtml(d) +
@@ -531,12 +659,15 @@
   }
 
   function renderEcommerce(d) {
-    var imgs = d.images.length ? d.images : [""];
-    var main = imageBlock(imgs[0], d.productName || d.brandName, "media js-main-img");
+    var imgs = d.images.length ? d.images : [];
+    var hero = heroImage(imgs) || { src: "", alt: d.productName || d.brandName };
+    var main = imgOf(hero, d.productName || d.brandName, "media js-main-img");
     var thumbs = imgs.length > 1
-      ? '<div class="thumbs">' + imgs.map(function (src, i) {
-          return '<button type="button" class="' + (i === 0 ? "active" : "") + '" data-src="' + escapeHtml(isSafeUrl(src) ? src : "") + '" aria-label="圖片 ' + (i + 1) + '">' +
-            imageBlock(src, "縮圖 " + (i + 1), "media") +
+      ? '<div class="thumbs">' + imgs.map(function (im, i) {
+          var resolved = resolveSrc(im.src);
+          var isHero = hero && im.src === hero.src;
+          return '<button type="button" class="' + (isHero ? "active" : "") + '" data-src="' + escapeHtml(isSafeUrl(resolved) ? resolved : "") + '" aria-label="圖片 ' + (i + 1) + '">' +
+            imgOf(im, "縮圖 " + (i + 1), "media") +
             "</button>";
         }).join("") + "</div>"
       : "";
@@ -563,6 +694,7 @@
           "</div>" +
         "</section>" +
         (specs ? '<section><div class="container">' + specs + "</div></section>" : "") +
+        gallerySection(d) +
         '<section class="cta-band"><div class="container"><h2>需要配件或其他相關產品？</h2><p class="lead">歡迎一併詢價或留言，我們會儘快回覆。</p><a class="btn" href="#contact">' + escapeHtml("聯絡" + (d.brandName || "我們")) + "</a></div></section>" +
       "</main>" +
       footerHtml(d) +
@@ -581,25 +713,42 @@
     return renderService(d);
   }
 
-  function render(input) {
+  function render(input, options) {
+    renderOptions = options || {};
     var d = normalize(input);
     var style = styleById(d.style);
     var theme = themeVars(style, d.customPrimary);
     var titleBits = [d.productName, d.brandName].filter(Boolean);
     var title = titleBits.join("｜") || "落地頁";
-    var desc = d.tagline || d.description || (d.brandName + "官方頁面");
+    var desc = d.tagline || d.description || ((d.brandName || "") + "官方頁面");
+    var hero = heroImage(d.images);
+    var ogImage = "";
+    if (hero && hero.src) {
+      var resolvedHero = resolveSrc(hero.src);
+      ogImage = absoluteUrl(resolvedHero, renderOptions.baseUrl || "");
+      if (/^(data:|blob:)/i.test(ogImage)) ogImage = "";
+    }
+    var pageUrl = renderOptions.pageUrl || "";
+    var og = "<title>" + escapeHtml(title) + "</title>\n" +
+      "<meta name=\"description\" content=\"" + escapeHtml(desc).slice(0, 160) + "\">\n" +
+      "<meta property=\"og:title\" content=\"" + escapeHtml(title) + "\">\n" +
+      "<meta property=\"og:description\" content=\"" + escapeHtml(desc).slice(0, 160) + "\">\n" +
+      "<meta property=\"og:type\" content=\"website\">\n" +
+      (pageUrl ? "<meta property=\"og:url\" content=\"" + escapeHtml(pageUrl) + "\">\n<link rel=\"canonical\" href=\"" + escapeHtml(pageUrl) + "\">\n" : "") +
+      (ogImage ? "<meta property=\"og:image\" content=\"" + escapeHtml(ogImage) + "\">\n<meta name=\"twitter:card\" content=\"summary_large_image\">\n" : "<meta name=\"twitter:card\" content=\"summary\">\n");
     var html = "<!DOCTYPE html>\n<html lang=\"zh-Hant\">\n<head>\n" +
       "<meta charset=\"UTF-8\">\n" +
       "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
-      "<title>" + escapeHtml(title) + "</title>\n" +
-      "<meta name=\"description\" content=\"" + escapeHtml(desc).slice(0, 160) + "\">\n" +
+      og +
       "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n" +
       "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n" +
       "<link href=\"https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&family=Noto+Serif+TC:wght@600;700&display=swap\" rel=\"stylesheet\">\n" +
       "<style>" + sharedCss(theme) + "</style>\n" +
       "</head>\n<body>\n" +
       bodyFor(d) +
+      (d.images && d.images.length > 1 ? "\n" + carouselScript() : "") +
       "\n</body>\n</html>";
+    renderOptions = {};
     return html;
   }
 
@@ -608,6 +757,8 @@
     STYLES: STYLES,
     render: render,
     normalize: normalize,
+    asImages: asImages,
+    heroImage: heroImage,
     escapeHtml: escapeHtml,
     styleById: styleById,
     templateById: templateById

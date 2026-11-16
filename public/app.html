@@ -43,6 +43,7 @@
           <button class="btn btn-secondary" type="button" id="btn-sample">載入示例內容</button>
           <button class="btn btn-secondary" type="button" id="btn-export-html">匯出 HTML</button>
           <button class="btn btn-secondary" type="button" id="btn-export-zip">匯出 ZIP</button>
+          <button class="btn btn-secondary" type="button" id="btn-publish">發佈網站</button>
           <button class="btn" type="button" id="btn-save">儲存</button>
         </div>
       </div>
@@ -124,9 +125,15 @@
             <input id="f-event-loc" type="text" placeholder="請填入活動地點">
           </div>
           <div class="field">
-            <label for="f-images">圖片網址（一行一個，或用逗號分隔）</label>
-            <textarea id="f-images" rows="3" placeholder="https://"></textarea>
-            <span class="hint">未提供圖片時，會顯示內建示意圖。請使用 http 或 https 網址。</span>
+            <label>圖片（最多 10 張）</label>
+            <div id="image-list" class="image-list"></div>
+            <div class="image-add">
+              <label class="btn btn-sm btn-secondary" for="f-image-file">上傳圖片</label>
+              <input id="f-image-file" type="file" accept="image/*" multiple hidden>
+              <input id="f-image-url" type="url" placeholder="或貼上圖片網址 https://">
+              <button class="btn btn-sm btn-secondary" type="button" id="btn-add-url">加入網址</button>
+            </div>
+            <span class="hint">可從電腦或手機上傳，或貼上 https 網址。上傳後會自動縮小壓縮。請指定一張主圖；多張圖片會顯示在預覽的圖片集／輪播中。</span>
           </div>
 
           <p class="section-title">聯絡資訊</p>
@@ -163,7 +170,40 @@
       </div>
     </section>
   </main>
+  <div class="modal-backdrop hidden" id="publish-modal">
+    <div class="modal card" role="dialog" aria-labelledby="publish-title">
+      <h2 id="publish-title">發佈官網連結</h2>
+      <p class="muted">發佈後會使用最近一次儲存的內容，產生可公開開啟的網址。若有未儲存的變更，會先幫你儲存。</p>
+      <div class="field">
+        <label for="publish-slug">網址代號（小寫英文、數字、連字號）</label>
+        <div class="slug-row">
+          <span class="slug-prefix" id="publish-prefix"></span>
+          <input id="publish-slug" type="text" maxlength="48" autocomplete="off">
+        </div>
+      </div>
+      <div id="publish-result" class="publish-result hidden">
+        <p><strong>公開網址</strong></p>
+        <div class="url-row">
+          <input id="publish-url" type="text" readonly>
+          <button class="btn btn-sm" type="button" id="btn-copy-url">複製</button>
+          <a class="btn btn-sm btn-secondary" id="btn-open-url" href="#" target="_blank" rel="noopener">開啟</a>
+        </div>
+        <div class="qr-box">
+          <div id="publish-qr"></div>
+          <p class="hint">可用手機掃描 QR code 開啟官網。</p>
+        </div>
+      </div>
+      <div class="form-error" id="publish-error"></div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="btn-publish-confirm">發佈</button>
+        <button class="btn btn-secondary hidden" type="button" id="btn-unpublish">取消發佈</button>
+        <button class="btn btn-secondary" type="button" id="btn-publish-close">關閉</button>
+      </div>
+    </div>
+  </div>
   <div class="toast" id="toast"></div>
+  <script src="/js/vendor/qrcode.js"></script>
+  <script src="/js/vendor/qrcode_utf8.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/templates.js"></script>
   <script src="/js/samples.js"></script>

@@ -231,3 +231,38 @@ th { font-size: 0.78rem; letter-spacing: 0.06em; color: var(--muted); font-weigh
   .builder-form, .builder-preview, .preview-frame-wrap { max-height: none; height: auto; }
   .preview-frame-wrap { height: 70vh; }
 }
+
+.image-list { display: grid; gap: 8px; margin-bottom: 10px; }
+.image-item {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  background: #f8fafc;
+}
+.image-item img, .image-item .ph {
+  width: 72px; height: 56px; object-fit: cover; border-radius: 8px; background: #e2e8f0;
+}
+.image-item .meta { font-size: 0.82rem; color: var(--muted); word-break: break-all; }
+.image-item .hero-tag { display: inline-block; margin-top: 4px; }
+.image-item .ops { display: flex; flex-direction: column; gap: 4px; }
+.image-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.image-add input[type="url"] { flex: 1; min-width: 160px; }
+
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 40; padding: 16px;
+}
+.modal { width: min(560px, 100%); padding: 22px 22px 18px; max-height: calc(100vh - 32px); overflow: auto; }
+.modal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.slug-row { display: flex; align-items: center; gap: 0; }
+.slug-prefix { font-size: 0.85rem; color: var(--muted); background: var(--paper); border: 1px solid var(--line); border-right: 0; border-radius: 12px 0 0 12px; padding: 10px 8px 10px 12px; white-space: nowrap; max-width: 55%; overflow: hidden; text-overflow: ellipsis; }
+.slug-row input { border-radius: 0 12px 12px 0; }
+.url-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.url-row input { flex: 1; min-width: 160px; }
+.qr-box { margin-top: 12px; display: flex; gap: 12px; align-items: center; }
+.qr-box svg, .qr-box img { width: 132px; height: 132px; background: #fff; border-radius: 8px; }
+.publish-badge { background: #d1fae5; color: #047857; }

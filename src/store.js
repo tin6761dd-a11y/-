@@ -101,6 +101,16 @@ async function updateSites(fn) {
   });
 }
 
+function uploads() {
+  return readJson('uploads.json', []);
+}
+
+async function updateUploads(fn) {
+  return withFile('uploads.json', [], (data) => {
+    return fn(data);
+  });
+}
+
 async function appendActivity(entry) {
   return withFile('activity.json', [], (data) => {
     data.push(entry);
@@ -122,6 +132,8 @@ module.exports = {
   saveActivity,
   updateUsers,
   updateSites,
+  uploads,
+  updateUploads,
   appendActivity,
   readJson,
   writeJson,

@@ -8,6 +8,8 @@
     login: '登入',
     generate: '生成／儲存網站',
     export: '匯出',
+    publish: '發佈網站',
+    unpublish: '取消發佈',
     delete_site: '刪除網站',
     admin_update_user: '調整使用者',
     admin_delete_user: '刪除使用者'
@@ -38,6 +40,7 @@
     if (m.name) bits.push(m.name);
     if (m.template) bits.push(templateLabel(m.template));
     if (m.format) bits.push(String(m.format).toUpperCase());
+    if (m.slug) bits.push('/s/' + m.slug);
     if (m.updated) bits.push('更新');
     if (m.role) bits.push('角色：' + m.role);
     if (typeof m.disabled === 'boolean') bits.push(m.disabled ? '已停用' : '已啟用');
@@ -50,6 +53,7 @@
       { n: stats.users, l: '註冊使用者' },
       { n: stats.activeUsers, l: '啟用中帳號' },
       { n: stats.sites, l: '已生成網站' },
+      { n: stats.publishedSites || 0, l: '已發佈網站' },
       { n: stats.loginsToday, l: '近 24 小時登入' },
       { n: stats.generationsWeek, l: '近 7 日生成／儲存' },
       { n: stats.exportsWeek, l: '近 7 日匯出' }
@@ -106,10 +110,13 @@
           '<td>' + escapeHtml(s.owner.name) + '<br><span class="muted">' + escapeHtml(s.owner.email) + '</span></td>' +
           '<td>' + escapeHtml(templateLabel(s.template)) + '／' + escapeHtml(styleLabel(s.style)) + '</td>' +
           '<td>' + escapeHtml(AdPage.formatTime(s.createdAt)) + '</td>' +
+          '<td>' + (s.published
+            ? '<span class="badge publish-badge">已發佈</span><br><a href="' + escapeHtml(s.publicUrl || ('/s/' + s.slug)) + '" target="_blank" rel="noopener">' + escapeHtml(s.publicUrl || ('/s/' + s.slug)) + '</a>'
+            : '<span class="badge neutral">未發佈</span>') + '</td>' +
           '<td><a href="/p/' + encodeURIComponent(s.id) + '" target="_blank">開啟</a></td>' +
         '</tr>'
       ).join('')
-      : '<tr><td colspan="5" class="muted">尚無網站</td></tr>';
+      : '<tr><td colspan="6" class="muted">尚無網站</td></tr>';
     $('activity-body').innerHTML = activity.activity.length
       ? activity.activity.map((a) =>
         '<tr>' +

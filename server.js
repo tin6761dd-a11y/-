@@ -8,6 +8,7 @@ const archiver = require('archiver');
 
 const store = require('./src/store');
 const templates = require('./src/templates');
+const media = require('./src/media');
 const FileSessionStore = require('./src/session-store');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -28,7 +29,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '3mb' }));
 app.use(express.urlencoded({ extended: false }));
 
 app.use(
@@ -160,7 +161,7 @@ function sendHtmlDownload(res, filename, html) {
   res.send(html);
 }
 
-function sendZipDownload(res, filename, html) {
+function sendZipDownload(res, filename, html, files) {
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', 'attachment; filename*=UTF-8\'\'' + encodeURIComponent(filename));
   const archive = archiver('zip', { zlib: { level: 9 } });
@@ -170,7 +171,122 @@ function sendZipDownload(res, filename, html) {
   });
   archive.pipe(res);
   archive.append(html, { name: 'index.html' });
+  (files || []).forEach((f) => archive.append(f.buf, { name: f.name }));
   archive.finalize();
+}
+
+const RESERVED_SLUGS = new Set([
+  'admin', 'app', 'api', 's', 'p', 'uploads', 'login', 'logout', 'register',
+  'static', 'css', 'js', 'favicon', 'assets', 'media', 'public', 'auth',
+  'new', 'edit', 'preview', 'index', 'www', 'official',
+]);
+
+function publicOrigin(req) {
+  const env = String(process.env.PUBLIC_ORIGIN || '').trim().replace(/\/$/, '');
+  if (env) return env;
+  const proto = String(req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
+  const host = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+  return proto + '://' + host;
+}
+
+function publicUrl(req, slug) {
+  return publicOrigin(req) + '/s/' + slug;
+}
+
+function validSlug(s) {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(String(s || '')) && String(s).length >= 2 && String(s).length <= 48;
+}
+
+function slugTaken(slug, exceptId) {
+  return store.sites().some((s) => s.published && s.slug === slug && s.id !== exceptId);
+}
+
+function suggestSlug(site) {
+  const raw = [site.data && site.data.brandName, site.data && site.data.productName, site.name]
+    .filter(Boolean)
+    .join('-');
+  let base = String(raw)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  if (base.length < 2) base = 'page-' + store.id().slice(0, 8);
+  let s = base;
+  let n = 2;
+  while (RESERVED_SLUGS.has(s) || slugTaken(s, site.id)) {
+    s = base.slice(0, 36) + '-' + n;
+    n += 1;
+    if (n > 99) {
+      s = 'page-' + store.id().slice(0, 8);
+      break;
+    }
+  }
+  return s;
+}
+
+function publicFields(site, req) {
+  const published = !!site.published && !!site.slug;
+  return {
+    published,
+    slug: site.slug || null,
+    publishedAt: site.publishedAt || null,
+    publicUrl: published ? publicUrl(req, site.slug) : null,
+  };
+}
+
+function assertSiteImages(user, images) {
+  if ((images || []).length > media.MAX_IMAGES) {
+    const err = new Error('最多可加入 10 張圖片');
+    err.status = 400;
+    throw err;
+  }
+  (images || []).forEach((im) => {
+    const src = im && im.src;
+    if (!src) return;
+    if (/^data:/i.test(src) || /^blob:/i.test(src)) {
+      const err = new Error('請先上傳圖片再儲存');
+      err.status = 400;
+      throw err;
+    }
+    if (media.isUploadSrc(src)) {
+      const rec = media.findUpload(media.uploadIdFromSrc(src));
+      if (!rec || (rec.userId !== user.id && user.role !== 'admin')) {
+        const err = new Error('有圖片不存在或沒有權限');
+        err.status = 400;
+        throw err;
+      }
+      return;
+    }
+    if (/^https?:\/\//i.test(src)) return;
+    if (src.charAt(0) === '/' && src.charAt(1) !== '/') return;
+    const err = new Error('圖片網址需為 http、https，或已上傳的圖片');
+    err.status = 400;
+    throw err;
+  });
+}
+
+function renderExportHtml(data, mode, req) {
+  const images = templates.normalize(data).images;
+  const pack = media.collectExportImages(images);
+  const opts = {};
+  if (mode === 'html') opts.embedImages = pack.embed;
+  if (mode === 'zip') opts.rewriteImages = pack.rewrite;
+  if (req) opts.baseUrl = publicOrigin(req);
+  return { html: templates.render(data, opts), files: pack.files };
+}
+
+function renderPublicHtml(site, req) {
+  const origin = publicOrigin(req);
+  const pageUrl = site.slug ? publicUrl(req, site.slug) : origin;
+  return templates.render(site.data, { baseUrl: origin, pageUrl: pageUrl });
+}
+
+function notFoundPage(res, message) {
+  res.status(404).type('html').send(
+    '<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>找不到網頁</title></head><body style="font-family:sans-serif;padding:48px;text-align:center"><h1>找不到此網站</h1><p>' +
+      String(message || '此頁面不存在，或尚未公開。') +
+      '</p></body></html>'
+  );
 }
 
 // ---------- Auth ----------
@@ -226,11 +342,11 @@ app.post('/api/auth/login', async (req, res) => {
     const password = String((req.body && req.body.password) || '');
     const user = findUserByEmail(email);
     if (!user) {
-      return res.status(401).json({ ok: false, error: '電子郵件或密碼不正確' });
+      return res.status(401).json({ ok: false, error: '帳號或密碼不正確' });
     }
     const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) {
-      return res.status(401).json({ ok: false, error: '電子郵件或密碼不正確' });
+      return res.status(401).json({ ok: false, error: '帳號或密碼不正確' });
     }
     if (user.disabled) {
       return res.status(403).json({ ok: false, error: '此帳號已停用，請聯絡管理員' });
@@ -295,6 +411,7 @@ app.get('/api/sites', requireAuth, (req, res) => {
       style: s.style,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
+      ...publicFields(s, req),
     }));
   res.json({ ok: true, sites: list });
 });
@@ -304,12 +421,13 @@ app.get('/api/sites/:id', requireAuth, (req, res) => {
   if (!site || !canAccessSite(req.user, site)) {
     return res.status(404).json({ ok: false, error: '找不到此網站' });
   }
-  res.json({ ok: true, site });
+  res.json({ ok: true, site: { ...site, ...publicFields(site, req) } });
 });
 
 app.post('/api/sites', requireAuth, async (req, res) => {
   try {
     const payload = sitePayload(req.body);
+    assertSiteImages(req.user, payload.data.images);
     const site = {
       id: store.id(),
       userId: req.user.id,
@@ -318,17 +436,21 @@ app.post('/api/sites', requireAuth, async (req, res) => {
       style: payload.style,
       customPrimary: payload.customPrimary,
       data: payload.data,
+      published: false,
+      slug: null,
+      publishedAt: null,
       createdAt: store.nowIso(),
       updatedAt: store.nowIso(),
     };
     await store.updateSites((sites) => {
       sites.push(site);
     });
+    await media.syncSiteUploads(req.user.id, site.id, payload.data.images);
     await logActivity(req, 'generate', { siteId: site.id, name: site.name, template: site.template });
     res.status(201).json({ ok: true, site });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ ok: false, error: '儲存失敗' });
+    res.status(err.status || 500).json({ ok: false, error: err.status ? err.message : '儲存失敗' });
   }
 });
 
@@ -339,6 +461,7 @@ app.put('/api/sites/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: '找不到此網站' });
     }
     const payload = sitePayload(req.body);
+    assertSiteImages(req.user, payload.data.images);
     const updated = await store.updateSites((sites) => {
       const found = sites.find((s) => s.id === req.params.id);
       if (!found) return { __changed: false, __return: null };
@@ -350,12 +473,13 @@ app.put('/api/sites/:id', requireAuth, async (req, res) => {
       found.updatedAt = store.nowIso();
       return { __return: found };
     });
+    if (updated) await media.syncSiteUploads(req.user.id, updated.id, payload.data.images);
     if (!updated) return res.status(404).json({ ok: false, error: '找不到此網站' });
     await logActivity(req, 'generate', { siteId: updated.id, name: updated.name, template: updated.template, updated: true });
     res.json({ ok: true, site: updated });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ ok: false, error: '儲存失敗' });
+    res.status(err.status || 500).json({ ok: false, error: err.status ? err.message : '儲存失敗' });
   }
 });
 
@@ -369,12 +493,13 @@ app.delete('/api/sites/:id', requireAuth, async (req, res) => {
     const idx = sites.findIndex((s) => s.id === req.params.id);
     if (idx >= 0) sites.splice(idx, 1);
   });
+  await media.deleteUploadsForSite(existing.id);
   await logActivity(req, 'delete_site', { siteId: existing.id, name: existing.name });
   res.json({ ok: true });
 });
 
 app.post('/api/preview', requireAuth, (req, res) => {
-  const html = templates.render(sitePayload(req.body).data);
+  const html = templates.render(sitePayload(req.body).data, { baseUrl: publicOrigin(req) });
   res.type('html').send(html);
 });
 
@@ -383,7 +508,7 @@ app.get('/api/sites/:id/preview', requireAuth, (req, res) => {
   if (!site || !canAccessSite(req.user, site)) {
     return res.status(404).type('html').send('<!DOCTYPE html><p>找不到此網站</p>');
   }
-  res.type('html').send(templates.render(site.data));
+  res.type('html').send(templates.render(site.data, { baseUrl: publicOrigin(req) }));
 });
 
 function exportFromBody(req) {
@@ -392,16 +517,16 @@ function exportFromBody(req) {
 
 app.post('/api/export/html', requireAuth, async (req, res) => {
   const payload = exportFromBody(req);
-  const html = templates.render(payload.data);
+  const out = renderExportHtml(payload.data, 'html', req);
   await logActivity(req, 'export', { format: 'html', name: payload.name, template: payload.template });
-  sendHtmlDownload(res, 'index.html', html);
+  sendHtmlDownload(res, 'index.html', out.html);
 });
 
 app.post('/api/export/zip', requireAuth, async (req, res) => {
   const payload = exportFromBody(req);
-  const html = templates.render(payload.data);
+  const out = renderExportHtml(payload.data, 'zip', req);
   await logActivity(req, 'export', { format: 'zip', name: payload.name, template: payload.template });
-  sendZipDownload(res, downloadName({ name: payload.name }, '.zip'), html);
+  sendZipDownload(res, downloadName({ name: payload.name }, '.zip'), out.html, out.files);
 });
 
 app.get('/api/sites/:id/export.html', requireAuth, async (req, res) => {
@@ -409,9 +534,9 @@ app.get('/api/sites/:id/export.html', requireAuth, async (req, res) => {
   if (!site || !canAccessSite(req.user, site)) {
     return res.status(404).json({ ok: false, error: '找不到此網站' });
   }
-  const html = templates.render(site.data);
+  const out = renderExportHtml(site.data, 'html', req);
   await logActivity(req, 'export', { format: 'html', siteId: site.id, name: site.name });
-  sendHtmlDownload(res, 'index.html', html);
+  sendHtmlDownload(res, 'index.html', out.html);
 });
 
 app.get('/api/sites/:id/export.zip', requireAuth, async (req, res) => {
@@ -419,9 +544,118 @@ app.get('/api/sites/:id/export.zip', requireAuth, async (req, res) => {
   if (!site || !canAccessSite(req.user, site)) {
     return res.status(404).json({ ok: false, error: '找不到此網站' });
   }
-  const html = templates.render(site.data);
+  const out = renderExportHtml(site.data, 'zip', req);
   await logActivity(req, 'export', { format: 'zip', siteId: site.id, name: site.name });
-  sendZipDownload(res, downloadName(site, '.zip'), html);
+  sendZipDownload(res, downloadName(site, '.zip'), out.html, out.files);
+});
+
+// ---------- Uploads ----------
+app.post('/api/uploads', requireAuth, async (req, res) => {
+  try {
+    const parsed = media.parseDataUrl(req.body && req.body.dataUrl);
+    if (!parsed) {
+      return res.status(400).json({ ok: false, error: '請上傳 JPEG、PNG 或 WebP 圖片，壓縮後需小於約 1.5 MB' });
+    }
+    const count = store.uploads().filter((u) => u.userId === req.user.id).length;
+    if (count >= 80) {
+      return res.status(400).json({ ok: false, error: '上傳數量已達上限，請先刪除不用的圖片' });
+    }
+    const siteId = req.body && req.body.siteId ? String(req.body.siteId) : null;
+    if (siteId) {
+      const site = store.sites().find((s) => s.id === siteId);
+      if (!site || site.userId !== req.user.id) {
+        return res.status(404).json({ ok: false, error: '找不到此網站' });
+      }
+    }
+    const rec = await media.saveUpload(req.user.id, parsed, siteId);
+    res.status(201).json({
+      ok: true,
+      upload: { id: rec.id, url: '/uploads/' + rec.id, mime: rec.mime, size: rec.size },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: '上傳失敗' });
+  }
+});
+
+app.delete('/api/uploads/:id', requireAuth, async (req, res) => {
+  const ok = await media.deleteUpload(req.params.id, req.user.id, req.user.role === 'admin');
+  if (!ok) return res.status(404).json({ ok: false, error: '找不到此圖片' });
+  res.json({ ok: true });
+});
+
+app.get('/uploads/:id', (req, res) => {
+  const id = String(req.params.id || '').replace(/\.[a-zA-Z0-9]+$/, '');
+  const rec = media.findUpload(id);
+  const data = media.readUploadBuffer(rec);
+  if (!data) return res.status(404).end();
+  res.setHeader('Content-Type', rec.mime);
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(data.buf);
+});
+
+// ---------- Publish ----------
+app.get('/api/sites/:id/publish-info', requireAuth, (req, res) => {
+  const site = store.sites().find((s) => s.id === req.params.id);
+  if (!site || !canAccessSite(req.user, site)) {
+    return res.status(404).json({ ok: false, error: '找不到此網站' });
+  }
+  res.json({
+    ok: true,
+    ...publicFields(site, req),
+    suggestedSlug: site.slug || suggestSlug(site),
+  });
+});
+
+app.post('/api/sites/:id/publish', requireAuth, async (req, res) => {
+  const site = store.sites().find((s) => s.id === req.params.id);
+  if (!site || site.userId !== req.user.id) {
+    return res.status(404).json({ ok: false, error: '找不到此網站' });
+  }
+  let slug = String((req.body && req.body.slug) || site.slug || suggestSlug(site)).trim().toLowerCase();
+  if (!validSlug(slug)) {
+    return res.status(400).json({ ok: false, error: '網址代號需為 2–48 字的小寫英文、數字，可以加連字號（-）' });
+  }
+  if (RESERVED_SLUGS.has(slug)) {
+    return res.status(400).json({ ok: false, error: '此外觀網址已被系統保留，請換一個' });
+  }
+  if (slugTaken(slug, site.id)) {
+    return res.status(409).json({ ok: false, error: '此外觀網址已被使用，請換一個' });
+  }
+  const updated = await store.updateSites((sites) => {
+    const found = sites.find((s) => s.id === req.params.id);
+    if (!found) return { __changed: false, __return: null };
+    found.published = true;
+    found.slug = slug;
+    found.publishedAt = store.nowIso();
+    return { __return: found };
+  });
+  await logActivity(req, 'publish', { siteId: site.id, name: site.name, slug: slug });
+  res.json({ ok: true, site: updated, ...publicFields(updated, req) });
+});
+
+app.post('/api/sites/:id/unpublish', requireAuth, async (req, res) => {
+  const site = store.sites().find((s) => s.id === req.params.id);
+  if (!site || site.userId !== req.user.id) {
+    if (!(site && req.user.role === 'admin')) {
+      return res.status(404).json({ ok: false, error: '找不到此網站' });
+    }
+  }
+  const updated = await store.updateSites((sites) => {
+    const found = sites.find((s) => s.id === req.params.id);
+    if (!found) return { __changed: false, __return: null };
+    found.published = false;
+    return { __return: found };
+  });
+  await logActivity(req, 'unpublish', { siteId: site.id, name: site.name, slug: site.slug });
+  res.json({ ok: true, site: updated, ...publicFields(updated, req) });
+});
+
+app.get('/s/:slug', (req, res) => {
+  const slug = String(req.params.slug || '').toLowerCase();
+  const site = store.sites().find((s) => s.published && s.slug === slug);
+  if (!site) return notFoundPage(res);
+  res.type('html').send(renderPublicHtml(site, req));
 });
 
 // Public-ish preview for owner/admin in a full window
@@ -434,7 +668,7 @@ app.get('/p/:id', (req, res, next) => {
   if (!user || !site || !canAccessSite(user, site)) {
     return res.status(404).type('html').send('<!DOCTYPE html><meta charset="utf-8"><p>找不到此網站或沒有權限。</p>');
   }
-  res.type('html').send(templates.render(site.data));
+  res.type('html').send(templates.render(site.data, { baseUrl: publicOrigin(req) }));
 });
 
 // ---------- Admin ----------
@@ -455,6 +689,7 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
       disabledUsers: users.filter((u) => u.disabled).length,
       admins: users.filter((u) => u.role === 'admin' || isAdminEmail(u.email)).length,
       sites: sites.length,
+      publishedSites: sites.filter((s) => s.published).length,
       loginsToday,
       exportsWeek,
       generationsWeek,
@@ -530,6 +765,7 @@ app.delete('/api/admin/users/:id', requireAdmin, async (req, res) => {
       if (sites[i].userId === targetId) sites.splice(i, 1);
     }
   });
+  await media.deleteUploadsForUser(targetId);
   await logActivity(req, 'admin_delete_user', { targetId, email: existing.email });
   res.json({ ok: true });
 });
@@ -547,6 +783,7 @@ app.get('/api/admin/sites', requireAdmin, (req, res) => {
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       owner: ownerName(s.userId),
+      ...publicFields(s, req),
     }));
   res.json({ ok: true, sites: list });
 });
@@ -566,6 +803,7 @@ app.get('/api/meta', (req, res) => {
     ok: true,
     templates: templates.TEMPLATES,
     styles: templates.STYLES.map((s) => ({ id: s.id, name: s.name, primary: s.primary })),
+    features: { multiImages: true, publish: true },
   });
 });
 
