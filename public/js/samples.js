@@ -107,7 +107,26 @@
       offer: '購機享基礎教學，維修支援可洽詢',
       ctaText: '立即詢價',
       eventDate: '',
-      eventLocation: ''
+      eventLocation: '',
+      seoTitle: '益芳手動封口機｜益芳封口機',
+      seoDescription: '益芳封口機提供手動封口機買賣與維修，適合手搖飲與外帶茶飲。亦可詢價果糖機等相關設備。',
+      seoKeywords: '封口機, 果糖機, 封口機維修, 飲料設備, 益芳封口機',
+      products: [
+        {
+          name: '益芳手動封口機（通用杯徑）',
+          price: '請填入售價',
+          description: '適合手搖飲與外帶茶飲，封口平整、好保養，購機可諮詢操作說明。',
+          images: [],
+          buyUrl: ''
+        },
+        {
+          name: '果糖機',
+          price: '請填入售價',
+          description: '果糖定量設備，可與封口機一併詢價、校正與保養。',
+          images: [],
+          buyUrl: ''
+        }
+      ]
     })
   };
 

@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
@@ -29,7 +30,12 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: '3mb' }));
+app.use((req, res, next) => {
+  if (req.path === '/api/admin/restore') {
+    return express.json({ limit: '50mb' })(req, res, next);
+  }
+  return express.json({ limit: '3mb' })(req, res, next);
+});
 app.use(express.urlencoded({ extended: false }));
 
 app.use(
@@ -178,15 +184,20 @@ function sendZipDownload(res, filename, html, files) {
 const RESERVED_SLUGS = new Set([
   'admin', 'app', 'api', 's', 'p', 'uploads', 'login', 'logout', 'register',
   'static', 'css', 'js', 'favicon', 'assets', 'media', 'public', 'auth',
-  'new', 'edit', 'preview', 'index', 'www', 'official',
+  'new', 'edit', 'preview', 'index', 'www', 'official', 'robots', 'sitemap',
 ]);
 
 function publicOrigin(req) {
-  const env = String(process.env.PUBLIC_ORIGIN || '').trim().replace(/\/$/, '');
+  const env = String(process.env.PUBLIC_BASE_URL || process.env.PUBLIC_ORIGIN || '').trim().replace(/\/$/, '');
   if (env) return env;
-  const proto = String(req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim();
   const host = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
-  return proto + '://' + host;
+  return 'https://' + host;
+}
+
+function googleSiteVerification() {
+  const v = String(process.env.GOOGLE_SITE_VERIFICATION || '').trim();
+  if (!v || !/^[A-Za-z0-9_-]{1,200}$/.test(v)) return '';
+  return v;
 }
 
 function publicUrl(req, slug) {
@@ -265,9 +276,16 @@ function assertSiteImages(user, images) {
   });
 }
 
+function assertSiteData(user, data) {
+  assertSiteImages(user, data.images);
+  (data.products || []).forEach((p) => {
+    assertSiteImages(user, (p.images || []).map((src) => (typeof src === 'string' ? { src: src } : src)));
+  });
+}
+
+
 function renderExportHtml(data, mode, req) {
-  const images = templates.normalize(data).images;
-  const pack = media.collectExportImages(images);
+  const pack = media.collectExportImages(templates.allImageRefs(data));
   const opts = {};
   if (mode === 'html') opts.embedImages = pack.embed;
   if (mode === 'zip') opts.rewriteImages = pack.rewrite;
@@ -278,7 +296,11 @@ function renderExportHtml(data, mode, req) {
 function renderPublicHtml(site, req) {
   const origin = publicOrigin(req);
   const pageUrl = site.slug ? publicUrl(req, site.slug) : origin;
-  return templates.render(site.data, { baseUrl: origin, pageUrl: pageUrl });
+  return templates.render(site.data, {
+    baseUrl: origin,
+    pageUrl: pageUrl,
+    googleSiteVerification: googleSiteVerification(),
+  });
 }
 
 function notFoundPage(res, message) {
@@ -427,7 +449,7 @@ app.get('/api/sites/:id', requireAuth, (req, res) => {
 app.post('/api/sites', requireAuth, async (req, res) => {
   try {
     const payload = sitePayload(req.body);
-    assertSiteImages(req.user, payload.data.images);
+    assertSiteData(req.user, payload.data);
     const site = {
       id: store.id(),
       userId: req.user.id,
@@ -445,7 +467,7 @@ app.post('/api/sites', requireAuth, async (req, res) => {
     await store.updateSites((sites) => {
       sites.push(site);
     });
-    await media.syncSiteUploads(req.user.id, site.id, payload.data.images);
+    await media.syncSiteUploads(req.user.id, site.id, templates.allImageRefs(payload.data));
     await logActivity(req, 'generate', { siteId: site.id, name: site.name, template: site.template });
     res.status(201).json({ ok: true, site });
   } catch (err) {
@@ -461,7 +483,7 @@ app.put('/api/sites/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: '找不到此網站' });
     }
     const payload = sitePayload(req.body);
-    assertSiteImages(req.user, payload.data.images);
+    assertSiteData(req.user, payload.data);
     const updated = await store.updateSites((sites) => {
       const found = sites.find((s) => s.id === req.params.id);
       if (!found) return { __changed: false, __return: null };
@@ -473,7 +495,7 @@ app.put('/api/sites/:id', requireAuth, async (req, res) => {
       found.updatedAt = store.nowIso();
       return { __return: found };
     });
-    if (updated) await media.syncSiteUploads(req.user.id, updated.id, payload.data.images);
+    if (updated) await media.syncSiteUploads(req.user.id, updated.id, templates.allImageRefs(payload.data));
     if (!updated) return res.status(404).json({ ok: false, error: '找不到此網站' });
     await logActivity(req, 'generate', { siteId: updated.id, name: updated.name, template: updated.template, updated: true });
     res.json({ ok: true, site: updated });
@@ -798,14 +820,152 @@ app.get('/api/admin/activity', requireAdmin, (req, res) => {
   res.json({ ok: true, activity: list });
 });
 
+app.get('/api/admin/backup', requireAdmin, async (req, res) => {
+  try {
+    const uploads = store.uploads().map((rec) => {
+      const data = media.readUploadBuffer(rec);
+      return {
+        id: rec.id,
+        userId: rec.userId,
+        siteId: rec.siteId || null,
+        mime: rec.mime,
+        ext: rec.ext,
+        size: rec.size,
+        createdAt: rec.createdAt,
+        data: data ? data.buf.toString('base64') : null,
+      };
+    });
+    const payload = {
+      ok: true,
+      exportedAt: store.nowIso(),
+      users: store.users(),
+      sites: store.sites(),
+      uploads,
+    };
+    await logActivity(req, 'backup', { users: payload.users.length, sites: payload.sites.length, uploads: uploads.length });
+    res.setHeader('Content-Disposition', 'attachment; filename="adpage-backup.json"');
+    res.json(payload);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: '備份失敗' });
+  }
+});
+
+app.post('/api/admin/restore', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (body.confirm !== true) {
+      return res.status(400).json({ ok: false, error: '請在請求中加上 confirm: true 以確認還原（會覆蓋現有資料）' });
+    }
+    if (!Array.isArray(body.users) || !Array.isArray(body.sites) || !Array.isArray(body.uploads)) {
+      return res.status(400).json({ ok: false, error: '備份格式不正確，需包含 users、sites、uploads 陣列' });
+    }
+    const users = body.users.filter((u) => u && u.id && u.email && u.passwordHash);
+    if (!users.some((u) => u.id === req.user.id || u.email === req.user.email)) {
+      users.push(req.user);
+    }
+    const sites = body.sites.filter((s) => s && s.id);
+    const uploadRecords = [];
+    media.uploadsDir();
+    for (const rec of body.uploads) {
+      if (!rec || !rec.id || !rec.ext) continue;
+      const item = {
+        id: String(rec.id).replace(/[^a-zA-Z0-9]/g, ''),
+        userId: rec.userId || null,
+        siteId: rec.siteId || null,
+        mime: rec.mime || 'image/jpeg',
+        ext: String(rec.ext).replace(/[^a-z0-9]/g, '') || 'jpg',
+        size: rec.size || 0,
+        createdAt: rec.createdAt || store.nowIso(),
+      };
+      if (rec.data) {
+        const buf = Buffer.from(String(rec.data), 'base64');
+        fs.writeFileSync(media.filePath(item.id, item.ext), buf);
+        item.size = buf.length;
+      }
+      uploadRecords.push(item);
+    }
+    await store.updateUsers(() => ({ __data: users }));
+    await store.updateSites(() => ({ __data: sites }));
+    await store.updateUploads(() => ({ __data: uploadRecords }));
+    const sessionDir = path.join(store.DATA_DIR, 'sessions');
+    try {
+      if (fs.existsSync(sessionDir)) {
+        fs.readdirSync(sessionDir).forEach((name) => {
+          try { fs.unlinkSync(path.join(sessionDir, name)); } catch (e) {}
+        });
+      }
+    } catch (e) {}
+    await logActivity(req, 'restore', { users: users.length, sites: sites.length, uploads: uploadRecords.length });
+    res.json({ ok: true, users: users.length, sites: sites.length, uploads: uploadRecords.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: '還原失敗' });
+  }
+});
+
 app.get('/api/meta', (req, res) => {
   res.json({
     ok: true,
     templates: templates.TEMPLATES,
     styles: templates.STYLES.map((s) => ({ id: s.id, name: s.name, primary: s.primary })),
-    features: { multiImages: true, publish: true },
+    features: { multiImages: true, publish: true, seo: true, products: true, sitemap: true, backup: true },
   });
 });
+
+// ---------- Public SEO ----------
+app.get('/robots.txt', (req, res) => {
+  const origin = publicOrigin(req);
+  const body = [
+    'User-agent: *',
+    'Allow: /s/',
+    'Allow: /uploads/',
+    'Disallow: /app',
+    'Disallow: /admin',
+    'Disallow: /api',
+    'Disallow: /p',
+    'Sitemap: ' + origin + '/sitemap.xml',
+    '',
+  ].join('\n');
+  res.type('text/plain; charset=utf-8').send(body);
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  const origin = publicOrigin(req);
+  const urls = store
+    .sites()
+    .filter((s) => s.published && s.slug)
+    .map((s) => {
+      const last = s.updatedAt || s.publishedAt || s.createdAt;
+      let lastmod = '';
+      try {
+        lastmod = new Date(last).toISOString();
+      } catch (e) {
+        lastmod = store.nowIso();
+      }
+      return '  <url>\n    <loc>' + templates.escapeHtml(origin + '/s/' + s.slug) + '</loc>\n    <lastmod>' + lastmod + '</lastmod>\n  </url>';
+    })
+    .join('\n');
+  const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+    urls +
+    (urls ? '\n' : '') +
+    '</urlset>\n';
+  res.type('application/xml; charset=utf-8').send(xml);
+});
+
+function sendHomePage(req, res) {
+  const filePath = path.join(PUBLIC_DIR, 'index.html');
+  let html = fs.readFileSync(filePath, 'utf8');
+  html = html.replace('lang="zh-Hant"', 'lang="zh-Hant-TW"');
+  const token = googleSiteVerification();
+  if (token && !/google-site-verification/.test(html)) {
+    html = html.replace('</head>', '  <meta name="google-site-verification" content="' + templates.escapeHtml(token) + '">\n</head>');
+  }
+  res.type('html').send(html);
+}
+
+app.get(['/', '/index.html'], sendHomePage);
 
 // ---------- Pages ----------
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));

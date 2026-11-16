@@ -11,6 +11,7 @@
   let previewTimer = null;
   let dirty = false;
   let imageState = [];
+  let productState = [];
   let publishedInfo = { published: false, slug: null, publicUrl: null };
 
   function collectForm() {
@@ -35,6 +36,18 @@
       contact: $('f-contact').value,
       eventDate: $('f-event-date').value,
       eventLocation: $('f-event-loc').value,
+      seoTitle: $('f-seo-title').value,
+      seoDescription: $('f-seo-desc').value,
+      seoKeywords: $('f-seo-keywords').value,
+      products: productState.map(function (p) {
+        return {
+          name: p.name || '',
+          price: p.price || '',
+          description: p.description || '',
+          images: p.images || [],
+          buyUrl: p.buyUrl || ''
+        };
+      }),
       images: imageState.map(function (im, i) {
         return {
           id: im.id || '',
@@ -210,6 +223,101 @@
     schedulePreview();
   }
 
+  function setProducts(list) {
+    productState = AdPageTemplates.asProducts(list || []);
+    renderProductList();
+  }
+
+  function renderProductList() {
+    const box = $('product-list');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!productState.length) {
+      box.innerHTML = '<p class="muted">尚未新增商品。可加入多項商品，方便顧客瀏覽與被 Google 收錄。</p>';
+      return;
+    }
+    productState.forEach(function (p, index) {
+      const wrap = document.createElement('div');
+      wrap.className = 'product-editor-item';
+      wrap.innerHTML =
+        '<div class="row">' +
+          '<div class="field" style="margin:0"><label>商品名稱</label><input class="p-name" type="text"></div>' +
+          '<div class="field" style="margin:0"><label>售價（NT$）</label><input class="p-price" type="text" placeholder="例如 12800"></div>' +
+        '</div>' +
+        '<div class="field"><label>簡短說明</label><textarea class="p-desc" rows="2"></textarea></div>' +
+        '<div class="field"><label>圖片網址（一行一個，可填 https 或已上傳的 /uploads/…）</label><textarea class="p-images" rows="2" placeholder="https://"></textarea></div>' +
+        '<div class="field"><label>購買連結（選填，例如蝦皮商品頁）</label><input class="p-buy" type="url" placeholder="https://"></div>' +
+        '<div class="image-add">' +
+          '<label class="btn btn-sm btn-secondary">上傳此商品圖片<input class="p-file" type="file" accept="image/*" hidden></label>' +
+          '<button type="button" class="btn btn-sm btn-secondary p-up">上移</button>' +
+          '<button type="button" class="btn btn-sm btn-secondary p-down">下移</button>' +
+          '<button type="button" class="btn btn-sm btn-danger p-del">移除商品</button>' +
+        '</div>';
+      wrap.querySelector('.p-name').value = p.name || '';
+      wrap.querySelector('.p-price').value = p.price || '';
+      wrap.querySelector('.p-desc').value = p.description || '';
+      wrap.querySelector('.p-images').value = (p.images || []).join('\n');
+      wrap.querySelector('.p-buy').value = p.buyUrl || '';
+      function readFields() {
+        p.name = wrap.querySelector('.p-name').value;
+        p.price = wrap.querySelector('.p-price').value;
+        p.description = wrap.querySelector('.p-desc').value;
+        p.images = wrap.querySelector('.p-images').value.split(/\r?\n+/).map(function (s) { return s.trim(); }).filter(Boolean);
+        p.buyUrl = wrap.querySelector('.p-buy').value.trim();
+        setDirty(true);
+        schedulePreview();
+      }
+      wrap.querySelectorAll('input, textarea').forEach(function (el) {
+        if (el.classList.contains('p-file')) return;
+        el.addEventListener('input', readFields);
+      });
+      wrap.querySelector('.p-file').addEventListener('change', async function (e) {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+          const blob = await compressImage(file);
+          const dataUrl = await blobToDataUrl(blob);
+          const res = await AdPage.api('/api/uploads', {
+            method: 'POST',
+            body: { dataUrl: dataUrl, siteId: $('site-id').value || undefined }
+          });
+          p.images = (p.images || []).concat([res.upload.url]);
+          wrap.querySelector('.p-images').value = p.images.join('\n');
+          setDirty(true);
+          schedulePreview();
+        } catch (err) {
+          AdPage.toast(err.message || '上傳失敗');
+        }
+      });
+      wrap.querySelector('.p-up').addEventListener('click', function () {
+        if (index === 0) return;
+        var tmp = productState[index - 1]; productState[index - 1] = productState[index]; productState[index] = tmp;
+        setDirty(true); renderProductList(); schedulePreview();
+      });
+      wrap.querySelector('.p-down').addEventListener('click', function () {
+        if (index >= productState.length - 1) return;
+        var tmp = productState[index + 1]; productState[index + 1] = productState[index]; productState[index] = tmp;
+        setDirty(true); renderProductList(); schedulePreview();
+      });
+      wrap.querySelector('.p-del').addEventListener('click', function () {
+        productState.splice(index, 1);
+        setDirty(true); renderProductList(); schedulePreview();
+      });
+      box.appendChild(wrap);
+    });
+  }
+
+  function addProduct() {
+    if (productState.length >= 30) {
+      AdPage.toast('最多可加入 30 項商品');
+      return;
+    }
+    productState.push({ name: '', price: '', description: '', images: [], buyUrl: '' });
+    setDirty(true);
+    renderProductList();
+  }
+
   function fillForm(data, name) {
     data = data || {};
     if (name != null) $('f-name').value = name;
@@ -235,7 +343,11 @@
     $('f-contact').value = data.contact || '';
     $('f-event-date').value = data.eventDate || '';
     $('f-event-loc').value = data.eventLocation || '';
+    $('f-seo-title').value = data.seoTitle || '';
+    $('f-seo-desc').value = data.seoDescription || '';
+    $('f-seo-keywords').value = data.seoKeywords || '';
     setImages(data.images || []);
+    setProducts(data.products || []);
   }
 
   function setDirty(v) {
@@ -532,6 +644,7 @@
     $('btn-copy-url').addEventListener('click', () => copyPublicUrl());
     $('f-image-file').addEventListener('change', (e) => addFiles(e.target.files));
     $('btn-add-url').addEventListener('click', addUrl);
+    $('btn-add-product').addEventListener('click', addProduct);
     $('f-image-url').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); addUrl(); }
     });

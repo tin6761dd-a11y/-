@@ -266,3 +266,11 @@ th { font-size: 0.78rem; letter-spacing: 0.06em; color: var(--muted); font-weigh
 .qr-box { margin-top: 12px; display: flex; gap: 12px; align-items: center; }
 .qr-box svg, .qr-box img { width: 132px; height: 132px; background: #fff; border-radius: 8px; }
 .publish-badge { background: #d1fae5; color: #047857; }
+
+.product-editor { display: grid; gap: 12px; margin-bottom: 10px; }
+.product-editor-item { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: #f8fafc; }
+.product-editor-item .row { display: grid; grid-template-columns: 1fr 140px; gap: 8px; }
+@media (max-width: 700px) {
+  .product-editor-item .row { grid-template-columns: 1fr; }
+}
+.backup-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 18px; align-items: center; }

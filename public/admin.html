@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-Hant-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -28,6 +28,16 @@
       <button class="btn btn-secondary" type="button" id="btn-refresh">重新整理</button>
     </div>
     <div class="stats" id="stats"></div>
+
+    <section class="card admin-section">
+      <h2>資料備份與還原</h2>
+      <p class="muted" style="padding:0 18px">下載使用者、網站與上傳圖片（含檔案）的 JSON 備份，方便之後移到持久儲存。還原會覆蓋現有資料，請謹慎使用。</p>
+      <div class="backup-actions">
+        <button class="btn" type="button" id="btn-backup">下載備份</button>
+        <label class="btn btn-secondary" for="restore-file">還原備份檔</label>
+        <input id="restore-file" type="file" accept="application/json,.json" hidden>
+      </div>
+    </section>
 
     <section class="card admin-section">
       <h2>使用者</h2>

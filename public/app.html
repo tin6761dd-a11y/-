@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-Hant-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -135,6 +135,27 @@
             </div>
             <span class="hint">可從電腦或手機上傳，或貼上 https 網址。上傳後會自動縮小壓縮。請指定一張主圖；多張圖片會顯示在預覽的圖片集／輪播中。</span>
           </div>
+
+          <p class="section-title">搜尋引擎（SEO）</p>
+          <div class="field">
+            <label for="f-seo-title">SEO 標題</label>
+            <input id="f-seo-title" type="text" maxlength="70" placeholder="預設為產品名稱與品牌">
+            <span class="hint">顯示在 Google 搜尋結果與瀏覽器分頁，建議 60 字以內。</span>
+          </div>
+          <div class="field">
+            <label for="f-seo-desc">SEO 說明</label>
+            <textarea id="f-seo-desc" rows="3" maxlength="180" placeholder="預設為標語或說明文字"></textarea>
+            <span class="hint">搜尋結果摘要，建議 80–160 字。</span>
+          </div>
+          <div class="field">
+            <label for="f-seo-keywords">關鍵字（以逗號分隔）</label>
+            <input id="f-seo-keywords" type="text" placeholder="例如：封口機, 果糖機, 維修, 台中">
+          </div>
+
+          <p class="section-title">商品列表</p>
+          <div id="product-list" class="product-editor"></div>
+          <button class="btn btn-sm btn-secondary" type="button" id="btn-add-product">新增商品</button>
+          <span class="hint" style="display:block;margin:8px 0 16px">可列出多項商品（名稱、售價 NT$、簡短說明、圖片網址、選填購買連結例如蝦皮）。電商商品頁會以格狀呈現，其他模板也會顯示此區塊。</span>
 
           <p class="section-title">聯絡資訊</p>
           <div class="field">

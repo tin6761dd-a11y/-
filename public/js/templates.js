@@ -197,6 +197,64 @@
     return s;
   }
 
+  function isPlaceholder(v) {
+    var s = String(v || "").trim();
+    if (!s) return true;
+    return /請填入/.test(s);
+  }
+
+  function parseTwdPrice(str) {
+    var s = String(str == null ? "" : str).trim();
+    if (!s || isPlaceholder(s)) return null;
+    var m = s.replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+    if (!m) return null;
+    var n = Number(m[1]);
+    return isFinite(n) ? n : null;
+  }
+
+  function formatListedPrice(str) {
+    var s = String(str || "").trim();
+    if (!s) return "";
+    if (/NT\s*\$|\$|元/.test(s) || isPlaceholder(s)) return s;
+    return "NT$ " + s;
+  }
+
+  function asProductImages(val) {
+    if (!val) return [];
+    if (typeof val === "string") return asImages(val).map(function (im) { return im.src; }).filter(Boolean);
+    if (!Array.isArray(val)) return [];
+    var out = [];
+    val.forEach(function (item) {
+      if (typeof item === "string") {
+        var s = item.trim();
+        if (s) out.push(s);
+      } else if (item && (item.src || item.url)) {
+        var u = String(item.src || item.url).trim();
+        if (u) out.push(u);
+      }
+    });
+    return out.slice(0, 8);
+  }
+
+  function asProducts(val) {
+    if (!Array.isArray(val)) return [];
+    var out = [];
+    for (var i = 0; i < val.length && out.length < 30; i++) {
+      var item = val[i];
+      if (!item || typeof item !== "object") continue;
+      var name = String(item.name || item.title || "").trim();
+      if (!name) continue;
+      out.push({
+        name: name,
+        price: String(item.price || "").trim(),
+        description: String(item.description || item.desc || "").trim(),
+        images: asProductImages(item.images),
+        buyUrl: String(item.buyUrl || item.buyLink || item.url || "").trim()
+      });
+    }
+    return out;
+  }
+
   function hexLuminance(hex) {
     var c = String(hex || "").replace("#", "").trim();
     if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
@@ -253,7 +311,11 @@
       address: String(input.address || "").trim(),
       eventDate: String(input.eventDate || "").trim(),
       eventLocation: String(input.eventLocation || "").trim(),
-      images: asImages(input.images)
+      images: asImages(input.images),
+      seoTitle: String(input.seoTitle || "").trim(),
+      seoDescription: String(input.seoDescription || "").trim(),
+      seoKeywords: String(input.seoKeywords || "").trim(),
+      products: asProducts(input.products)
     };
   }
 
@@ -310,6 +372,24 @@
   function imgOf(im, altFallback, className) {
     if (!im) return imageBlock("", altFallback, className);
     return imageBlock(im.src, im.alt || altFallback, className);
+  }
+
+  function productGrid(d) {
+    var items = d.products || [];
+    if (!items.length) return "";
+    var cards = items.map(function (p) {
+      var img = p.images && p.images[0] ? imageBlock(p.images[0], p.name, "media") : imageBlock("", p.name, "media");
+      var price = formatListedPrice(p.price);
+      var buy = p.buyUrl && isSafeUrl(p.buyUrl)
+        ? '<a class="btn btn-sm" href="' + escapeHtml(safeUrl(p.buyUrl, "#")) + '" rel="noopener" target="_blank">查看商品／購買</a>'
+        : "";
+      return '<article class="product-card">' + img +
+        '<div class="p-body"><h3>' + escapeHtml(p.name) + "</h3>" +
+        (p.description ? '<p class="p-desc">' + escapeHtml(p.description) + "</p>" : "") +
+        (price ? '<div class="p-price">' + escapeHtml(price) + "</div>" : "") +
+        buy + "</div></article>";
+    }).join("");
+    return '<section class="product-section" id="products"><div class="container"><h2>商品列表</h2><div class="product-grid">' + cards + "</div></div></section>";
   }
 
   function gallerySection(d) {
@@ -544,6 +624,15 @@
       ".carousel-dots{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap}",
       ".carousel-dots button{width:9px;height:9px;padding:0;border:0;border-radius:50%;background:var(--border);cursor:pointer}",
       ".carousel-dots button.active{background:var(--primary);transform:scale(1.2)}",
+      ".product-section h2{margin-bottom:20px}",
+      ".product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px}",
+      ".product-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column}",
+      ".product-card .media,.product-card .img-ph{min-height:180px;max-height:220px;border-radius:0;box-shadow:none;object-fit:cover}",
+      ".product-card .p-body{padding:16px;display:flex;flex-direction:column;gap:8px;flex:1}",
+      ".product-card h3{margin:0;font-size:1.05rem}",
+      ".product-card .p-desc{margin:0;color:var(--muted);font-size:.92rem;flex:1}",
+      ".product-card .p-price{color:var(--primary);font-weight:800;font-size:1.15rem}",
+      ".product-card .btn{margin-top:4px;align-self:flex-start}",
       "@media (max-width: 860px){",
       ".hero-grid,.footer-grid,.ecom-grid{grid-template-columns:1fr}",
       ".hero{padding:40px 0 24px}",
@@ -575,7 +664,7 @@
         (d.features.length
           ? '<section><div class="container"><h2>為什麼選擇我們</h2>' + featuresList(d.features) + "</div></section>"
           : "") +
-        gallerySection(d) +
+        gallerySection(d) + productGrid(d) +
         '<section class="cta-band"><div class="container"><h2>想進一步了解或預約？</h2><p class="lead">歡迎直接洽詢，我們會儘快與您聯繫。</p><a class="btn" href="#contact">' + escapeHtml(d.ctaText) + "</a></div></section>" +
       "</main>" +
       footerHtml(d)
@@ -616,7 +705,7 @@
             return '<article class="card"><div class="num">' + s.n + "</div><h3>" + s.t + "</h3><p class=\"lead\" style=\"margin:0\">" + s.p + "</p></article>";
           }).join("") +
         "</div></div></section>" +
-        gallerySection(d) +
+        gallerySection(d) + productGrid(d) +
         '<section class="cta-band"><div class="container"><h2>需要協助或想進一步了解？</h2><p class="lead">歡迎先聯絡我們，說明您的需求。</p><a class="btn" href="#contact">' + escapeHtml(d.ctaText) + "</a></div></section>" +
       "</main>" +
       footerHtml(d)
@@ -650,7 +739,7 @@
         (d.features.length
           ? '<section><div class="container"><h2>活動內容</h2>' + featuresList(d.features) + "</div></section>"
           : "") +
-        gallerySection(d) +
+        gallerySection(d) + productGrid(d) +
         '<section class="cta-band"><div class="container"><h2>名額有限，歡迎提早預約</h2><a class="btn" href="#contact">' + escapeHtml(d.ctaText) + "</a></div></section>" +
       "</main>" +
       footerHtml(d) +
@@ -694,7 +783,7 @@
           "</div>" +
         "</section>" +
         (specs ? '<section><div class="container">' + specs + "</div></section>" : "") +
-        gallerySection(d) +
+        gallerySection(d) + productGrid(d) +
         '<section class="cta-band"><div class="container"><h2>需要配件或其他相關產品？</h2><p class="lead">歡迎一併詢價或留言，我們會儘快回覆。</p><a class="btn" href="#contact">' + escapeHtml("聯絡" + (d.brandName || "我們")) + "</a></div></section>" +
       "</main>" +
       footerHtml(d) +
@@ -713,14 +802,65 @@
     return renderService(d);
   }
 
+  function jsonLdScript(d, title, desc, pageUrl, ogImage) {
+    var graph = [];
+    var biz = {
+      "@type": ["LocalBusiness", "Store"],
+      "name": d.brandName || title,
+      "description": desc || undefined,
+      "url": pageUrl || undefined,
+      "image": ogImage || undefined
+    };
+    if (d.phone && !isPlaceholder(d.phone)) biz.telephone = d.phone;
+    if (d.email && !isPlaceholder(d.email)) biz.email = d.email;
+    if (d.address && !isPlaceholder(d.address)) {
+      biz.address = { "@type": "PostalAddress", "streetAddress": d.address, "addressCountry": "TW" };
+    }
+    Object.keys(biz).forEach(function (k) { if (biz[k] === undefined || biz[k] === "") delete biz[k]; });
+    graph.push(biz);
+
+    function productNode(name, description, images, priceVal, offerUrl) {
+      var node = { "@type": "Product", "name": name };
+      if (description) node.description = description;
+      if (d.brandName) node.brand = { "@type": "Brand", "name": d.brandName };
+      var imgs = (images || []).map(function (src) {
+        var abs = absoluteUrl(resolveSrc(src), renderOptions.baseUrl || "");
+        return abs && !/^(data:|blob:)/i.test(abs) ? abs : "";
+      }).filter(Boolean);
+      if (imgs.length) node.image = imgs.length === 1 ? imgs[0] : imgs;
+      var offer = { "@type": "Offer", "priceCurrency": "TWD", "price": String(priceVal) };
+      if (offerUrl) offer.url = offerUrl;
+      offer.availability = "https://schema.org/InStock";
+      node.offers = offer;
+      return node;
+    }
+
+    var listedNames = {};
+    (d.products || []).forEach(function (p) {
+      var amount = parseTwdPrice(p.price);
+      if (amount == null) return;
+      listedNames[p.name] = true;
+      var url = (p.buyUrl && isSafeUrl(p.buyUrl) && !/^#/.test(p.buyUrl)) ? p.buyUrl : (pageUrl || undefined);
+      graph.push(productNode(p.name, p.description, p.images, amount, url));
+    });
+    var mainPrice = parseTwdPrice(d.price);
+    if (mainPrice != null && d.productName && !listedNames[d.productName]) {
+      var mainImgs = (d.images || []).map(function (im) { return im.src; });
+      graph.push(productNode(d.productName, d.tagline || d.description, mainImgs, mainPrice, pageUrl || undefined));
+    }
+
+    var payload = graph.length === 1 ? Object.assign({ "@context": "https://schema.org" }, graph[0]) : { "@context": "https://schema.org", "@graph": graph };
+    return '<script type="application/ld+json">' + JSON.stringify(payload).replace(/</g, "\\u003c") + "</scr" + "ipt>";
+  }
+
   function render(input, options) {
     renderOptions = options || {};
     var d = normalize(input);
     var style = styleById(d.style);
     var theme = themeVars(style, d.customPrimary);
     var titleBits = [d.productName, d.brandName].filter(Boolean);
-    var title = titleBits.join("｜") || "落地頁";
-    var desc = d.tagline || d.description || ((d.brandName || "") + "官方頁面");
+    var title = d.seoTitle || titleBits.join("｜") || "落地頁";
+    var desc = d.seoDescription || d.tagline || d.description || ((d.brandName || "") + "官方頁面");
     var hero = heroImage(d.images);
     var ogImage = "";
     if (hero && hero.src) {
@@ -728,18 +868,31 @@
       ogImage = absoluteUrl(resolvedHero, renderOptions.baseUrl || "");
       if (/^(data:|blob:)/i.test(ogImage)) ogImage = "";
     }
+    if (!ogImage && d.products && d.products[0] && d.products[0].images && d.products[0].images[0]) {
+      ogImage = absoluteUrl(resolveSrc(d.products[0].images[0]), renderOptions.baseUrl || "");
+      if (/^(data:|blob:)/i.test(ogImage)) ogImage = "";
+    }
     var pageUrl = renderOptions.pageUrl || "";
+    var verify = String(renderOptions.googleSiteVerification || "").trim();
     var og = "<title>" + escapeHtml(title) + "</title>\n" +
       "<meta name=\"description\" content=\"" + escapeHtml(desc).slice(0, 160) + "\">\n" +
+      (d.seoKeywords ? "<meta name=\"keywords\" content=\"" + escapeHtml(d.seoKeywords).slice(0, 200) + "\">\n" : "") +
+      (verify ? "<meta name=\"google-site-verification\" content=\"" + escapeHtml(verify) + "\">\n" : "") +
       "<meta property=\"og:title\" content=\"" + escapeHtml(title) + "\">\n" +
       "<meta property=\"og:description\" content=\"" + escapeHtml(desc).slice(0, 160) + "\">\n" +
       "<meta property=\"og:type\" content=\"website\">\n" +
+      "<meta property=\"og:locale\" content=\"zh_TW\">\n" +
       (pageUrl ? "<meta property=\"og:url\" content=\"" + escapeHtml(pageUrl) + "\">\n<link rel=\"canonical\" href=\"" + escapeHtml(pageUrl) + "\">\n" : "") +
-      (ogImage ? "<meta property=\"og:image\" content=\"" + escapeHtml(ogImage) + "\">\n<meta name=\"twitter:card\" content=\"summary_large_image\">\n" : "<meta name=\"twitter:card\" content=\"summary\">\n");
-    var html = "<!DOCTYPE html>\n<html lang=\"zh-Hant\">\n<head>\n" +
+      (ogImage ? "<meta property=\"og:image\" content=\"" + escapeHtml(ogImage) + "\">\n" : "") +
+      "<meta name=\"twitter:card\" content=\"" + (ogImage ? "summary_large_image" : "summary") + "\">\n" +
+      "<meta name=\"twitter:title\" content=\"" + escapeHtml(title) + "\">\n" +
+      "<meta name=\"twitter:description\" content=\"" + escapeHtml(desc).slice(0, 160) + "\">\n" +
+      (ogImage ? "<meta name=\"twitter:image\" content=\"" + escapeHtml(ogImage) + "\">\n" : "");
+    var html = "<!DOCTYPE html>\n<html lang=\"zh-Hant-TW\">\n<head>\n" +
       "<meta charset=\"UTF-8\">\n" +
       "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
       og +
+      jsonLdScript(d, title, desc, pageUrl, ogImage) + "\n" +
       "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n" +
       "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n" +
       "<link href=\"https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&family=Noto+Serif+TC:wght@600;700&display=swap\" rel=\"stylesheet\">\n" +
@@ -752,12 +905,27 @@
     return html;
   }
 
+  function allImageRefs(input) {
+    var d = normalize(input || {});
+    var list = (d.images || []).slice();
+    (d.products || []).forEach(function (prod) {
+      (prod.images || []).forEach(function (src) {
+        list.push({ src: src, alt: prod.name || "", hero: false, kind: String(src).indexOf("/uploads/") === 0 ? "upload" : "url" });
+      });
+    });
+    return list;
+  }
+
   return {
     TEMPLATES: TEMPLATES,
     STYLES: STYLES,
     render: render,
     normalize: normalize,
     asImages: asImages,
+    asProducts: asProducts,
+    allImageRefs: allImageRefs,
+    parseTwdPrice: parseTwdPrice,
+    isPlaceholder: isPlaceholder,
     heroImage: heroImage,
     escapeHtml: escapeHtml,
     styleById: styleById,

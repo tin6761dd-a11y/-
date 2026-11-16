@@ -10,6 +10,8 @@
     export: '匯出',
     publish: '發佈網站',
     unpublish: '取消發佈',
+    backup: '下載備份',
+    restore: '還原備份',
     delete_site: '刪除網站',
     admin_update_user: '調整使用者',
     admin_delete_user: '刪除使用者'
@@ -139,6 +141,36 @@
     $('user-chip').textContent = me.name + '（管理員）';
     $('btn-logout').addEventListener('click', () => AdPage.logout());
     $('btn-refresh').addEventListener('click', () => loadAll(me).catch((e) => AdPage.toast(e.message)));
+    $('btn-backup').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/admin/backup', { credentials: 'same-origin' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || '備份失敗');
+        }
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'adpage-backup.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        AdPage.toast('已下載備份');
+      } catch (e) { AdPage.toast(e.message); }
+    });
+    $('restore-file').addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      if (!confirm('還原會覆蓋現有使用者、網站與圖片，確定繼續？')) return;
+      try {
+        const data = JSON.parse(await file.text());
+        data.confirm = true;
+        await AdPage.api('/api/admin/restore', { method: 'POST', body: data });
+        AdPage.toast('已還原備份');
+        await loadAll(me);
+      } catch (ex) { AdPage.toast(ex.message || '還原失敗'); }
+    });
 
     $('users-body').addEventListener('click', async (e) => {
       const btn = e.target.closest('button[data-act]');
