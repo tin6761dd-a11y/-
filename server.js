@@ -201,7 +201,7 @@ app.post('/api/auth/register', async (req, res) => {
         name,
         email,
         passwordHash,
-        role: isFirst || isAdminEmail(email) ? 'admin' : 'user',
+        role: isAdminEmail(email) || (isFirst && !ADMIN_EMAIL) ? 'admin' : 'user',
         disabled: false,
         createdAt: store.nowIso(),
         lastLoginAt: store.nowIso(),
@@ -587,7 +587,17 @@ app.use((req, res, next) => {
   next();
 });
 
+async function seedAdmin() {
+  const hash = String(process.env.ADMIN_PASSWORD_HASH || '').trim();
+  if (!ADMIN_EMAIL || !hash) return;
+  await store.updateUsers((users) => {
+    if (users.some((u) => u.email === ADMIN_EMAIL)) return { __changed: false };
+    users.push({ id: store.id(), name: ADMIN_EMAIL, email: ADMIN_EMAIL, passwordHash: hash, role: 'admin', disabled: false, createdAt: store.nowIso(), lastLoginAt: null });
+  });
+}
+
 if (require.main === module) {
+  seedAdmin().catch((e) => console.error('seedAdmin failed', e));
   app.listen(PORT, '0.0.0.0', () => {
     console.log('迅頁 AdPage 已啟動：http://127.0.0.1:' + PORT);
     console.log('資料目錄：' + store.DATA_DIR);
