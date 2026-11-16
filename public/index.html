@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>迅頁 — 廣告落地頁產生器</title>
+  <meta name="description" content="快速生成產品促銷、服務介紹、活動宣傳與電商商品等廣告落地頁，可預覽、儲存與匯出靜態網站。">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div class="auth-shell">
+    <section class="auth-intro">
+      <div>
+        <div class="brand-mark" style="margin-bottom:28px">迅頁 <small>AdPage</small></div>
+        <h1>快速生成<br>專業廣告落地頁</h1>
+        <p>輸入產品或服務資訊、選擇模板與風格，即可預覽並匯出獨立的靜態網站。適合促銷活動、服務介紹、活動宣傳與商品頁。</p>
+        <ul class="feature-dots">
+          <li>四種模板：產品促銷、服務介紹、活動宣傳（含倒數）、電商商品頁</li>
+          <li>多種風格主題，也可自訂主色；即時桌面／手機預覽</li>
+          <li>匯出單一 index.html 或 ZIP，方便之後放到 Vercel、Netlify</li>
+          <li>管理員可查看所有使用者與已生成的網站</li>
+        </ul>
+      </div>
+      <p class="muted" style="color:#94a3b8;font-size:.85rem">第一個註冊的帳號會自動成為管理員。也可在伺服器設定 ADMIN_EMAIL。</p>
+    </section>
+    <section class="auth-panel">
+      <div class="auth-card">
+        <div class="tabs" role="tablist">
+          <button type="button" id="tab-login" class="active">登入</button>
+          <button type="button" id="tab-register">註冊</button>
+        </div>
+        <form id="form-login">
+          <div class="field">
+            <label for="login-email">帳號或電子郵件</label>
+            <input id="login-email" name="email" type="text" autocomplete="username" required>
+          </div>
+          <div class="field">
+            <label for="login-password">密碼</label>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+          </div>
+          <div class="form-error" id="login-error"></div>
+          <button class="btn full-btn" type="submit">登入</button>
+        </form>
+        <form id="form-register" class="hidden">
+          <div class="field">
+            <label for="reg-name">名稱</label>
+            <input id="reg-name" name="name" type="text" maxlength="40" autocomplete="name" required>
+          </div>
+          <div class="field">
+            <label for="reg-email">帳號或電子郵件</label>
+            <input id="reg-email" name="email" type="text" autocomplete="username" required>
+          </div>
+          <div class="field">
+            <label for="reg-password">密碼（至少 8 個字元）</label>
+            <input id="reg-password" name="password" type="password" minlength="8" autocomplete="new-password" required>
+          </div>
+          <div class="form-error" id="register-error"></div>
+          <button class="btn full-btn" type="submit">建立帳號</button>
+        </form>
+      </div>
+    </section>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="/js/common.js"></script>
+  <script>
+    (function () {
+      const tabLogin = document.getElementById('tab-login');
+      const tabRegister = document.getElementById('tab-register');
+      const formLogin = document.getElementById('form-login');
+      const formRegister = document.getElementById('form-register');
+
+      function show(which) {
+        const isLogin = which === 'login';
+        tabLogin.classList.toggle('active', isLogin);
+        tabRegister.classList.toggle('active', !isLogin);
+        formLogin.classList.toggle('hidden', !isLogin);
+        formRegister.classList.toggle('hidden', isLogin);
+      }
+      tabLogin.addEventListener('click', () => show('login'));
+      tabRegister.addEventListener('click', () => show('register'));
+
+      AdPage.api('/api/auth/me').then((data) => {
+        if (data.user) location.replace('/app');
+      }).catch(() => {});
+
+      formLogin.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const err = document.getElementById('login-error');
+        err.textContent = '';
+        try {
+          await AdPage.api('/api/auth/login', {
+            method: 'POST',
+            body: {
+              email: document.getElementById('login-email').value,
+              password: document.getElementById('login-password').value
+            }
+          });
+          location.href = '/app';
+        } catch (ex) {
+          err.textContent = ex.message;
+        }
+      });
+
+      formRegister.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const err = document.getElementById('register-error');
+        err.textContent = '';
+        try {
+          await AdPage.api('/api/auth/register', {
+            method: 'POST',
+            body: {
+              name: document.getElementById('reg-name').value,
+              email: document.getElementById('reg-email').value,
+              password: document.getElementById('reg-password').value
+            }
+          });
+          location.href = '/app';
+        } catch (ex) {
+          err.textContent = ex.message;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

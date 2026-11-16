@@ -1,0 +1,20 @@
+{
+  "name": "ad-site-builder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "迅頁 — 廣告落地頁產生器，快速生成多種行銷網站",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "bcryptjs": "^3.0.2",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1"
+  }
+}

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的網站 — 迅頁</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand-mark" href="/app">迅頁 <small>AdPage</small></a>
+    <div class="top-actions">
+      <span class="user-chip" id="user-chip"></span>
+      <a id="admin-link" class="hidden" href="/admin">管理後台</a>
+      <button class="btn btn-sm btn-secondary" type="button" id="btn-logout">登出</button>
+    </div>
+  </header>
+
+  <main class="wrap wrap-wide">
+    <section id="view-dashboard">
+      <div class="page-head">
+        <div>
+          <h1>我的廣告網站</h1>
+          <p class="muted">建立、預覽、編輯並匯出落地頁。第一個版本以靜態網站為主。</p>
+        </div>
+        <button class="btn" type="button" id="btn-new">新增網站</button>
+      </div>
+      <div id="site-list" class="site-grid"></div>
+    </section>
+
+    <section id="view-builder" class="hidden">
+      <div class="page-head">
+        <div>
+          <button class="btn btn-secondary btn-sm" type="button" id="btn-back">← 回到列表</button>
+          <h1 id="builder-title" style="margin-top:12px">編輯網站</h1>
+          <p class="muted" id="save-status">尚未儲存</p>
+        </div>
+        <div class="top-actions">
+          <button class="btn btn-secondary" type="button" id="btn-sample">載入示例內容</button>
+          <button class="btn btn-secondary" type="button" id="btn-export-html">匯出 HTML</button>
+          <button class="btn btn-secondary" type="button" id="btn-export-zip">匯出 ZIP</button>
+          <button class="btn" type="button" id="btn-save">儲存</button>
+        </div>
+      </div>
+
+      <div class="builder">
+        <form class="card builder-form" id="builder-form" autocomplete="off">
+          <input type="hidden" id="site-id">
+          <p class="section-title">專案與模板</p>
+          <div class="field">
+            <label for="f-name">專案名稱</label>
+            <input id="f-name" type="text" maxlength="80" placeholder="例如：益芳封口機官網">
+          </div>
+          <div class="field">
+            <label for="f-template">模板</label>
+            <select id="f-template"></select>
+          </div>
+          <div class="field">
+            <label for="f-style">風格主題</label>
+            <select id="f-style"></select>
+          </div>
+          <div class="field">
+            <label for="f-primary">自訂主色</label>
+            <div class="color-row">
+              <input id="f-primary" type="color" value="#1d4ed8">
+              <input id="f-primary-text" type="text" value="#1d4ed8" placeholder="#1d4ed8">
+            </div>
+            <span class="hint">預設為專業藍調。可改成品牌色，會套用到按鈕與重點文字。</span>
+          </div>
+
+          <p class="section-title">品牌與內容</p>
+          <div class="field">
+            <label for="f-brand">品牌名稱</label>
+            <input id="f-brand" type="text" placeholder="益芳封口機">
+          </div>
+          <div class="field">
+            <label for="f-product">產品／服務名稱</label>
+            <input id="f-product" type="text">
+          </div>
+          <div class="field">
+            <label for="f-tagline">一句話標語</label>
+            <input id="f-tagline" type="text">
+          </div>
+          <div class="field">
+            <label for="f-desc">說明文字</label>
+            <textarea id="f-desc" rows="5"></textarea>
+          </div>
+          <div class="field">
+            <label for="f-features">特色／優點（一行一項）</label>
+            <textarea id="f-features" rows="6"></textarea>
+          </div>
+          <div class="field">
+            <label for="f-price">售價</label>
+            <input id="f-price" type="text" placeholder="NT$ 請填入售價">
+          </div>
+          <div class="field">
+            <label for="f-original">原價（選填，用於刪除線價格）</label>
+            <input id="f-original" type="text" placeholder="NT$ 請填入原價">
+          </div>
+          <div class="field">
+            <label for="f-offer">優惠說明</label>
+            <input id="f-offer" type="text">
+          </div>
+          <div class="field">
+            <label for="f-cta">行動按鈕文字</label>
+            <input id="f-cta" type="text" placeholder="立即洽詢">
+          </div>
+          <div class="field">
+            <label for="f-cta-link">行動按鈕連結</label>
+            <input id="f-cta-link" type="text" placeholder="#contact 或 https://">
+          </div>
+
+          <p class="section-title">活動與圖片</p>
+          <div class="field">
+            <label for="f-event-date">活動日期時間（活動宣傳模板會顯示倒數）</label>
+            <input id="f-event-date" type="datetime-local">
+          </div>
+          <div class="field">
+            <label for="f-event-loc">活動地點</label>
+            <input id="f-event-loc" type="text" placeholder="請填入活動地點">
+          </div>
+          <div class="field">
+            <label for="f-images">圖片網址（一行一個，或用逗號分隔）</label>
+            <textarea id="f-images" rows="3" placeholder="https://"></textarea>
+            <span class="hint">未提供圖片時，會顯示內建示意圖。請使用 http 或 https 網址。</span>
+          </div>
+
+          <p class="section-title">聯絡資訊</p>
+          <div class="field">
+            <label for="f-phone">電話</label>
+            <input id="f-phone" type="text" placeholder="請填入電話">
+          </div>
+          <div class="field">
+            <label for="f-email">電子郵件</label>
+            <input id="f-email" type="text" placeholder="請填入電子郵件">
+          </div>
+          <div class="field">
+            <label for="f-address">地址</label>
+            <input id="f-address" type="text" placeholder="請填入地址">
+          </div>
+          <div class="field">
+            <label for="f-contact">其他聯絡說明</label>
+            <textarea id="f-contact" rows="3"></textarea>
+          </div>
+        </form>
+
+        <aside class="card builder-preview">
+          <div class="preview-toolbar">
+            <strong>即時預覽</strong>
+            <div class="seg" role="group" aria-label="預覽尺寸">
+              <button type="button" class="active" id="prev-desktop">桌面</button>
+              <button type="button" id="prev-mobile">手機</button>
+            </div>
+          </div>
+          <div class="preview-frame-wrap" id="preview-wrap">
+            <iframe class="preview" id="preview" title="網站預覽" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+  <script src="/js/common.js"></script>
+  <script src="/js/templates.js"></script>
+  <script src="/js/samples.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

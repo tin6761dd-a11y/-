@@ -1,0 +1,9 @@
+node_modules/
+data/*.json
+.session_secret
+sessions/
+data/sessions/
+.env
+*.log
+.DS_Store
+tunnel.log
